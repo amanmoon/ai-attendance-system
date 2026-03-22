@@ -7,7 +7,8 @@ import pandas as pd
 import insightface
 from insightface.app import FaceAnalysis
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"]  = "2"
 
 THRESHOLD = 0.6
 MIN_FACE_PX = 10
