@@ -11,15 +11,15 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"]  = "2"
 
 EMBEDDING_MODEL  = "Facenet512"
 DETECTOR_BACKEND = "retinaface"
-THRESHOLD = 0.40
+THRESHOLD = 0.4
 MIN_FACE_PX = 10
-BBOX_PADDING = 0.20
+BBOX_PADDING = 0.30
 DETECT_MAX_LONG_EDGE = None
 USE_TILING    = True
-TILE_SIZE      = 1800
-TILE_OVERLAP   = 0.15
+TILE_SIZE      = 1500
+TILE_OVERLAP   = 0.20
 
-def cosine_distance(a, b) -> float:
+def cosine_distance(a, b):
     a, b = np.array(a, dtype=np.float32), np.array(b, dtype=np.float32)
     return float(1.0 - np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
 
@@ -241,7 +241,9 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
 
     os.makedirs(output_dir, exist_ok=True)
     unknown_dir = os.path.join(output_dir, "unknown_faces")
+    identified_dir = os.path.join(output_dir, "identified_faces")
     os.makedirs(unknown_dir, exist_ok=True)
+    os.makedirs(identified_dir, exist_ok=True)
 
     annotated_image  = original_image.copy()
     present_students: set[str] = set()
@@ -251,7 +253,7 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
         crop = det["crop"]
         x, y, w, h = det["bbox"]
 
-        enhanced_crop = enhance_face_crop(crop)
+        enhanced_crop = crop
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as ftmp:
             face_tmp = ftmp.name
@@ -283,29 +285,37 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
                 best_distance    = dist
                 best_match_index = i
 
+        closest_name = known_face_names[best_match_index] if best_match_index != -1 else "None"
+
         if best_distance <= THRESHOLD and best_match_index != -1:
-            name = known_face_names[best_match_index]
+            name = closest_name
             present_students.add(name)
+            
+            cv2.imwrite(
+                os.path.join(identified_dir, f"{name}.png"),
+                enhanced_crop,
+            )
             print(f"Face {name}  (dist={best_distance:.3f})")
         else:
             name = "Unknown"
             unknown_count += 1
             cv2.imwrite(
-                os.path.join(unknown_dir, f"unknown_{unknown_count}.png"),
+                os.path.join(unknown_dir, f"unknown_{unknown_count}_{closest_name}.png"),
                 enhanced_crop,
             )
-            print(f"Face {idx+1}: Unknown  (best_dist={best_distance:.3f})")
+            print(f"Face {idx+1}: Unknown  (closest={closest_name}, dist={best_distance:.3f})")
 
         left, top     = x, y
         right, bottom = x + w, y + h
         color = (0, 200, 80) if name != "Unknown" else (0, 60, 220)
+        label = name if name != "Unknown" else f"Unknown ({closest_name})"
         cv2.rectangle(annotated_image, (left, top), (right, bottom), color, 2)
         cv2.rectangle(annotated_image, (left, bottom), (right, bottom + 35),
                       color, cv2.FILLED)
         cv2.putText(
-            annotated_image, name,
+            annotated_image, label,
             (left + 6, bottom + 25),
-            cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1,
+            cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1,
         )
 
     out_img_path = os.path.join(
@@ -327,6 +337,7 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
         "unknown_count":        unknown_count,
         "annotated_image_path": out_img_path,
         "csv_path":             csv_path,
+        "identified_dir":       identified_dir,
     }
 
     print(f"\nSummary — Present: {len(present_students)}  "
