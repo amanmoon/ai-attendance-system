@@ -4,17 +4,17 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 from collections import defaultdict
-from deepface import DeepFace
-
-from mark_attendance import enhance_face_crop
+import insightface
+from insightface.app import FaceAnalysis
 
 DATASET_DIR      = "course_project_dataset"
-OUTPUT_FILE      = "embeddings_dl_no_enhancement.pkl"
-EMBEDDING_MODEL = "Facenet512"
-DETECTOR         = "retinaface"
+OUTPUT_FILE      = "embeddings.pkl"
 
 MIN_FACE_SIZE    = 80
 MIN_CONFIDENCE   = 0.90
+
+face_app = FaceAnalysis(name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+face_app.prepare(ctx_id=0, det_size=(640, 640))
 
 student_embeddings = defaultdict(list)
 
@@ -28,47 +28,32 @@ for student in tqdm(os.listdir(DATASET_DIR), desc="Processing"):
             continue
 
         path = os.path.join(student_dir, file)
+        img = cv2.imread(path)
+        if img is None:
+            continue
 
         try:
-            faces = DeepFace.extract_faces(
-                img_path=path,
-                detector_backend=DETECTOR,
-                align=True,
-                enforce_detection=True,
-            )
+            faces = face_app.get(img)
         except:
             continue
 
         if not faces:
+            print("no face found")
             continue
 
-        best = max(faces, key=lambda x: x.get("confidence", 0))
+        best = max(faces, key=lambda x: x.det_score)
 
-        conf = best.get("confidence", 0)
-        fa   = best.get("facial_area", {})
-        w, h = fa.get("w", 0), fa.get("h", 0)
+        conf = best.det_score
+        bbox = best.bbox.astype(int)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
 
-        if conf < MIN_CONFIDENCE or min(w, h) < MIN_FACE_SIZE:
-            continue
+        # if conf < MIN_CONFIDENCE or min(w, h) < MIN_FACE_SIZE:
+        #     print("face not clear")
+        #     continue
 
-        face = best["face"]
-        face = (face * 255).astype(np.uint8)
-        face = cv2.cvtColor(face, cv2.COLOR_RGB2BGR)
-
-        # face = enhance_face_crop(face)
-
-        try:
-            emb = DeepFace.represent(
-                img_path=face,
-                model_name=EMBEDDING_MODEL,
-                detector_backend="skip",
-                enforce_detection=False,
-            )[0]["embedding"]
-
-            student_embeddings[student].append(np.array(emb))
-
-        except:
-            continue
+        emb = best.embedding
+        student_embeddings[student].append(np.array(emb))
 
 
 def clean_embeddings(embs, threshold=0.7):
@@ -100,6 +85,32 @@ for name, embs in student_embeddings.items():
     known_encodings.append(final_emb.tolist())
     known_names.append(name)
 
+
+def cosine_distance(a, b):
+    a, b = np.array(a, dtype=np.float32), np.array(b, dtype=np.float32)
+    return float(1.0 - np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+
+def euclidean_distance(a, b):
+    a = np.array(a, dtype=float)
+    b = np.array(b, dtype=float)
+    
+    if a.shape != b.shape:
+        raise ValueError("Vectors must be of the same size")
+    
+    return np.linalg.norm(a - b)
+
+min_dist = float('inf')
+min_pair = ("", "")
+
+for i in range(len(known_encodings)):
+    for j in range(i + 1, len(known_encodings)):
+        dist = cosine_distance(known_encodings[i], known_encodings[j])
+        if dist < min_dist:
+            min_dist = dist
+            min_pair = (known_names[i], known_names[j])
+
+if min_dist != float('inf'):
+    print(f"\nMinimum distance between two different persons: {min_dist:.4f} ({min_pair[0]} & {min_pair[1]})\n")
 
 with open(OUTPUT_FILE, "wb") as f:
     pickle.dump({
