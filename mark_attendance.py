@@ -1,17 +1,15 @@
 import os
+import sys
 import cv2
 import pickle
-import tempfile
 import numpy as np
 import pandas as pd
-from deepface import DeepFace
+import insightface
+from insightface.app import FaceAnalysis
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-os.environ["TF_CPP_MIN_LOG_LEVEL"]  = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-EMBEDDING_MODEL  = "Facenet512"
-DETECTOR_BACKEND = "retinaface"
-THRESHOLD = 0.4
+THRESHOLD = 0.6
 MIN_FACE_PX = 10
 BBOX_PADDING = 0.30
 DETECT_MAX_LONG_EDGE = None
@@ -19,10 +17,17 @@ USE_TILING    = True
 TILE_SIZE      = 1500
 TILE_OVERLAP   = 0.20
 
+face_app = FaceAnalysis(name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+face_app.prepare(ctx_id=0, det_size=(640, 640))
+
 def cosine_distance(a, b):
     a, b = np.array(a, dtype=np.float32), np.array(b, dtype=np.float32)
     return float(1.0 - np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
 
+def euclidean_distance(a, b):
+    a = np.array(a, dtype=float)
+    b = np.array(b, dtype=float)
+    return np.linalg.norm(a - b)
 
 def resize_for_detection(image):
 
@@ -96,7 +101,7 @@ def non_max_suppression(boxes, scores, iou_threshold=0.4):
     return keep
 
 
-def tiled_face_detection(image, tile_size = 1800, overlap = 0.15):
+def tiled_face_detection(image, tile_size=1800, overlap=0.15):
 
     h, w = image.shape[:2]
     stride = int(tile_size * (1.0 - overlap))
@@ -112,42 +117,35 @@ def tiled_face_detection(image, tile_size = 1800, overlap = 0.15):
     if not y_coords: y_coords = [0]
     if not x_coords: x_coords = [0]
 
-    num_tiles = len(x_coords) * len(y_coords)
-
     for ty in y_coords:
         for tx in x_coords:
             y_end = min(ty + tile_size, h)
             x_end = min(tx + tile_size, w)
             tile = image[ty:y_end, tx:x_end]
-            
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                tmp_path = tmp.name
-            cv2.imwrite(tmp_path, tile)
-            
-            try:
-                detections = DeepFace.extract_faces(
-                    img_path=tmp_path,
-                    detector_backend=DETECTOR_BACKEND,
-                    enforce_detection=False,
-                    align=True,
-                )
-            except Exception:
-                detections = []
-            finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
 
-            if not detections:
+            try:
+                faces = face_app.get(tile)
+            except Exception:
+                faces = []
+
+            if not faces:
                 continue
                 
-            for det in detections:
-                if det.get("confidence", 0.0) < 0.1:
+            for face in faces:
+                if face.det_score < 0.1:
                     continue
-                    
-                fa = det["facial_area"]
-                fa["x"] += tx
-                fa["y"] += ty
-                all_detections.append(det)
+
+                bbox = face.bbox.copy()
+                bbox[0] += tx
+                bbox[1] += ty
+                bbox[2] += tx
+                bbox[3] += ty
+
+                all_detections.append({
+                    "bbox": bbox,
+                    "confidence": float(face.det_score),
+                    "embedding": face.embedding,
+                })
 
     if not all_detections:
         return []
@@ -155,16 +153,16 @@ def tiled_face_detection(image, tile_size = 1800, overlap = 0.15):
     boxes = []
     scores = []
     for det in all_detections:
-        fa = det["facial_area"]
-        boxes.append([fa["x"], fa["y"], fa["w"], fa["h"]])
-        scores.append(det.get("confidence", 1.0))
+        b = det["bbox"]
+        boxes.append([b[0], b[1], b[2] - b[0], b[3] - b[1]])
+        scores.append(det["confidence"])
         
     keep_indices = non_max_suppression(boxes, scores, iou_threshold=0.3)
     
     return [all_detections[i] for i in keep_indices]
 
 
-def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", output_dir = "output"):
+def mark_attendance(class_image_path, embeddings_file = "embeddings.pkl", output_dir = "output"):
 
     with open(embeddings_file, "rb") as f:
         data = pickle.load(f)
@@ -189,22 +187,20 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
             overlap=TILE_OVERLAP
         )
     else:
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp_path = tmp.name
-        cv2.imwrite(tmp_path, detect_image)
         try:
-            detected = DeepFace.extract_faces(
-                img_path=tmp_path,
-                detector_backend=DETECTOR_BACKEND,
-                enforce_detection=False,
-                align=True,
-            )
+            faces = face_app.get(detect_image)
         except Exception as e:
-            os.remove(tmp_path)
             return None
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+
+        detected = []
+        for face in faces:
+            if face.det_score < 0.1:
+                continue
+            detected.append({
+                "bbox": face.bbox.copy(),
+                "confidence": float(face.det_score),
+                "embedding": face.embedding,
+            })
 
     if not isinstance(detected, list):
         detected = [detected] if isinstance(detected, dict) else []
@@ -212,12 +208,12 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
     scale_inv = 1.0 / det_scale
     valid_detections = []
     for det in detected:
-        fa = det["facial_area"]
+        bbox = det["bbox"]
 
-        x = int(fa["x"] * scale_inv)
-        y = int(fa["y"] * scale_inv)
-        w = int(fa["w"] * scale_inv)
-        h = int(fa["h"] * scale_inv)
+        x = int(bbox[0] * scale_inv)
+        y = int(bbox[1] * scale_inv)
+        w = int((bbox[2] - bbox[0]) * scale_inv)
+        h = int((bbox[3] - bbox[1]) * scale_inv)
 
         if w < MIN_FACE_PX or h < MIN_FACE_PX:
             continue
@@ -237,6 +233,7 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
             "crop": crop,
             "bbox": (x, y, w, h),
             "confidence": det.get("confidence", 0.0),
+            "embedding": det["embedding"],
         })
 
     os.makedirs(output_dir, exist_ok=True)
@@ -253,26 +250,7 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
         crop = det["crop"]
         x, y, w, h = det["bbox"]
 
-        enhanced_crop = crop
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as ftmp:
-            face_tmp = ftmp.name
-        cv2.imwrite(face_tmp, enhanced_crop)
-
-        try:
-            results = DeepFace.represent(
-                img_path=face_tmp,
-                model_name=EMBEDDING_MODEL,
-                detector_backend="skip",
-                enforce_detection=False,
-            )
-            face_encoding = results[0]["embedding"] if results else None
-        except Exception as e:
-            print(f"embedding error ({e})")
-            face_encoding = None
-        finally:
-            if os.path.exists(face_tmp):
-                os.remove(face_tmp)
+        face_encoding = det["embedding"]
 
         if face_encoding is None:
             continue
@@ -293,7 +271,7 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
             
             cv2.imwrite(
                 os.path.join(identified_dir, f"{name}.png"),
-                enhanced_crop,
+                crop,
             )
             print(f"Face {name}  (dist={best_distance:.3f})")
         else:
@@ -301,7 +279,7 @@ def mark_attendance(class_image_path, embeddings_file = "embeddings_dl.pkl", out
             unknown_count += 1
             cv2.imwrite(
                 os.path.join(unknown_dir, f"unknown_{unknown_count}_{closest_name}.png"),
-                enhanced_crop,
+                crop,
             )
             print(f"Face {idx+1}: Unknown  (closest={closest_name}, dist={best_distance:.3f})")
 

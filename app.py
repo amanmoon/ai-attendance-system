@@ -20,7 +20,7 @@ st.title("Automated Classroom Attendance System")
 st.markdown("Upload classroom images to automatically mark student attendance using face recognition.")
 
 DATASET_DIR = "course_project_dataset"
-EMBEDDINGS_FILE = "embeddings/embeddings_dl.pkl"
+EMBEDDINGS_FILE = "embeddings/embeddings.pkl"
 OUTPUT_DIR = "output"
 UPLOAD_DIR = "uploads"
 
@@ -152,7 +152,7 @@ if st.session_state.results:
     st.divider()
 
     tab1, tab2, tab3, tab4 = st.tabs(["Attendance Report", "Classroom Images", "Identified Faces", "Unknown Faces"])
-    
+
     with tab1:
         st.subheader("Final Attendance")
         st.dataframe(res["df_final"], width='stretch')
@@ -165,13 +165,13 @@ if st.session_state.results:
                     file_name="final_attendance.csv",
                     mime="text/csv"
                 )
-            
+
     with tab2:
         st.subheader("Annotated Images")
         for img_path in res["annotated_images"]:
             if os.path.exists(img_path):
                 st.image(img_path, caption=os.path.basename(img_path), width='content')
-                
+
     with tab3:
         st.subheader("Successfully Identified Faces")
         identified_crops = []
