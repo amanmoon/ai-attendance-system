@@ -3,19 +3,19 @@ import os
 import pandas as pd
 from PIL import Image, ImageOps
 import shutil
-from mark_attendance import mark_attendance
+from mark_attendance import mark_attendance, cluster_faces
 import time
 from supabase import create_client, Client
 
-def mark_present_callback(crop_path, selected_student):
-    if not os.path.exists(crop_path):
+def mark_present_callback(person_dir, selected_student):
+    if not os.path.exists(person_dir):
         return
     res = st.session_state.results
-    new_name = f"{selected_student}.png"
+    new_name = selected_student
     target_path = os.path.join(res['identified_dir'], new_name)
     if os.path.exists(target_path):
-        os.remove(target_path)
-    os.rename(crop_path, target_path)
+        shutil.rmtree(target_path)
+    os.rename(person_dir, target_path)
     
     idx = res['df_final'].index[res['df_final']['Student Name'] == selected_student].tolist()
     if idx:
@@ -30,14 +30,14 @@ def mark_present_callback(crop_path, selected_student):
     res['df_final'].to_csv(res['final_csv_path'], index=False)
     st.session_state.results = res
 
-def unmark_present_callback(crop_path, student_name):
-    if not os.path.exists(crop_path):
+def unmark_present_callback(person_dir, student_name):
+    if not os.path.exists(person_dir):
         return
     res = st.session_state.results
     ts = int(time.time() * 1000)
-    new_name = f"unknown_{ts}_{student_name}.png"
+    new_name = f"unknown_{ts}_{student_name}"
     target_path = os.path.join(res['unknown_dir'], new_name)
-    os.rename(crop_path, target_path)
+    os.rename(person_dir, target_path)
     
     idx = res['df_final'].index[res['df_final']['Student Name'] == student_name].tolist()
     if idx:
@@ -93,7 +93,7 @@ else:
     st.sidebar.warning("No embeddings found. Please generate embeddings first.")
 
 st.sidebar.subheader("Cloud Database Sync")
-if st.sidebar.button("Download Embeddings from Cloud", use_container_width=True):
+if st.sidebar.button("Download Embeddings from Cloud", width='stretch'):
     try:
         res = Client.storage.from_("embeddings").download("embeddings_dl.pkl")
         with open(EMBEDDINGS_FILE, 'wb') as f:
@@ -102,7 +102,7 @@ if st.sidebar.button("Download Embeddings from Cloud", use_container_width=True)
     except Exception as e:
         st.sidebar.error(f"Failed to download: {e}")
 
-if st.sidebar.button("Upload Embeddings to Cloud", use_container_width=True):
+if st.sidebar.button("Upload Embeddings to Cloud", width='stretch'):
     if os.path.exists(EMBEDDINGS_FILE):
         try:
             with open(EMBEDDINGS_FILE, 'rb') as f:
@@ -141,7 +141,6 @@ if uploaded_files:
             status_text = st.empty()
             
             all_present_students = set()
-            all_unknown_crops = []
             annotated_images = []
             
             if os.path.exists(OUTPUT_DIR):
@@ -152,21 +151,24 @@ if uploaded_files:
             os.makedirs(unknown_dir, exist_ok=True)
             os.makedirs(identified_dir, exist_ok=True)
             
+            file_paths = []
             for idx, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"Processing image {idx + 1}/{len(uploaded_files)}: {uploaded_file.name}...")
-                
                 file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
                 with open(file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
+                file_paths.append(file_path)
+                progress_bar.progress(0.1 + 0.4 * (idx + 1) / len(uploaded_files))
                 
-                results = mark_attendance(file_path, EMBEDDINGS_FILE, OUTPUT_DIR)
-                if results:
-                    all_present_students.update(results['present'])
-                    annotated_images.append(results['annotated_image_path'])
-                    
-                progress_bar.progress((idx + 1) / len(uploaded_files))
+            status_text.text("Detecting faces, clustering, and marking attendance across all images (this may take a while)...")
+            
+            results = mark_attendance(file_paths, EMBEDDINGS_FILE, OUTPUT_DIR)
+            progress_bar.progress(0.9)
+            if results:
+                all_present_students.update(results['present'])
+                annotated_images.extend(results.get('annotated_image_paths', []))
             
             status_text.text("Processing complete! Generating final report...")
+            progress_bar.progress(1.0)
             time.sleep(1)
             status_text.empty()
             progress_bar.empty()
@@ -193,7 +195,7 @@ if uploaded_files:
             n_absent  = n_total - n_present
             n_unknown = sum(
                 1 for f in os.listdir(unknown_dir)
-                if f.endswith(('.jpg', '.png'))
+                if os.path.isdir(os.path.join(unknown_dir, f))
             ) if os.path.exists(unknown_dir) else 0
 
             st.session_state.results = {
@@ -244,73 +246,98 @@ if st.session_state.results:
 
     with tab3:
         st.subheader("Successfully Identified Faces")
-        identified_crops = []
+        identified_persons = []
         if os.path.exists(res["identified_dir"]):
-            identified_crops = [os.path.join(res["identified_dir"], f) for f in os.listdir(res["identified_dir"]) if f.endswith(('.jpg', '.png'))]
+            identified_persons = [os.path.join(res["identified_dir"], f) for f in os.listdir(res["identified_dir"]) if os.path.isdir(os.path.join(res["identified_dir"], f))]
         
-        if not identified_crops:
+        if not identified_persons:
             st.info("No identified faces to display.")
         else:
-            st.success(f"{len(identified_crops)} student(s) identified.")
-            cols = st.columns(3)
-            for i, crop_path in enumerate(identified_crops):
-                with cols[i % 3]:
-                    student_name = os.path.splitext(os.path.basename(crop_path))[0]
-                    ref_image_path = get_reference_image(student_name, DATASET_DIR)
-                    
-                    head_col1, head_col2 = st.columns(2, vertical_alignment="center")
-                    with head_col1:
-                        st.write(f"**{student_name}**")
-                    with head_col2:
-                        if st.button("Unmark", key=f"unmark_{crop_path}", width='stretch'):
-                            unmark_present_callback(crop_path, student_name)
-                            st.rerun()
-                            
-                    c1, c2 = st.columns(2)
-                    c1.image(ImageOps.exif_transpose(Image.open(crop_path)).resize((200, 200)), caption="Image from Classroom", width='stretch')
-                    if ref_image_path:
-                        c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='stretch')
-                    else:
-                        c2.info("No reference found")
-                        
-                    st.divider()
+            st.success(f"{len(identified_persons)} student(s) identified.")
+            for i in range(0, len(identified_persons), 3):
+                cols = st.columns(3)
+                for j in range(3):
+                    if i + j < len(identified_persons):
+                        person_dir = identified_persons[i + j]
+                        with cols[j]:
+                            with st.container(border=True):
+                                student_name = os.path.basename(person_dir)
+                                person_crops = sorted([os.path.join(person_dir, f) for f in os.listdir(person_dir) if f.endswith(('.jpg', '.png'))])
+                                main_crop = person_crops[0] if person_crops else None
+                                if not main_crop:
+                                    continue
+                                    
+                                ref_image_path = get_reference_image(student_name, DATASET_DIR)
+                                
+                                head_col1, head_col2 = st.columns(2, vertical_alignment="center")
+                                with head_col1:
+                                    st.write(f"**{student_name}**")
+                                with head_col2:
+                                    if st.button("Unmark", key=f"unmark_{person_dir}", width='stretch'):
+                                        unmark_present_callback(person_dir, student_name)
+                                        st.rerun()
+                                        
+                                c1, c2 = st.columns(2)
+                                c1.image(ImageOps.exif_transpose(Image.open(main_crop)).resize((200, 200)), caption="Image from Classroom", width='stretch')
+                                if ref_image_path:
+                                    c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='stretch')
+                                else:
+                                    c2.info("No reference found")
+                                    
+                                if len(person_crops) > 1:
+                                    with st.expander(f"View all {len(person_crops)} clustered images"):
+                                        display_images = [ImageOps.exif_transpose(Image.open(c)).resize((100, 100)) for c in person_crops]
+                                        st.image(display_images, width=80)
 
     with tab4:
         st.subheader("Unknown Individuals Detected")
-        unknown_crops = []
+        unknown_persons = []
         if os.path.exists(res["unknown_dir"]):
-            unknown_crops = [os.path.join(res["unknown_dir"], f) for f in os.listdir(res["unknown_dir"]) if f.endswith(('.jpg', '.png'))]
+            unknown_persons = [os.path.join(res["unknown_dir"], f) for f in os.listdir(res["unknown_dir"]) if os.path.isdir(os.path.join(res["unknown_dir"], f))]
         
-        if not unknown_crops:
+        if not unknown_persons:
             st.success("No unknown individuals detected in the classroom images.")
         else:
-            st.warning(f"{len(unknown_crops)} unknown face(s) detected.")
-            cols = st.columns(3)
-            for i, crop_path in enumerate(unknown_crops):
-                with cols[i % 3]:
-                    basename = os.path.splitext(os.path.basename(crop_path))[0]
-                    parts = basename.split('_')
-                    closest_name = parts[-1] if len(parts) > 2 else "None"
-                    ref_image_path = get_reference_image(closest_name, DATASET_DIR)
-                    
-                    st.write(f"**Unknown** (Nearest: {closest_name})")
-                    c1, c2 = st.columns(2)
-                    c1.image(ImageOps.exif_transpose(Image.open(crop_path)).resize((200, 200)), caption="Image from Classroom", width='stretch')
-                    if ref_image_path:
-                        c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='stretch')
-                    else:
-                        c2.info("No reference found")
-                        
-                    all_students = res['df_final']['Student Name'].tolist()
-                    default_idx = all_students.index(closest_name) if closest_name in all_students else 0
-                    
-                    action_c1, action_c2 = st.columns(2)
-                    with action_c1:
-                        selected_student = st.selectbox("Select Student", all_students, index=default_idx, key=f"select_{crop_path}", label_visibility="collapsed")
-                    with action_c2:
-                        if st.button("Mark", width='stretch', key=f"mark_{crop_path}"):
-                            mark_present_callback(crop_path, selected_student)
-                            st.rerun()
-                        
-                    st.divider()
+            st.warning(f"{len(unknown_persons)} unknown face(s) detected.")
+            for i in range(0, len(unknown_persons), 3):
+                cols = st.columns(3)
+                for j in range(3):
+                    if i + j < len(unknown_persons):
+                        person_dir = unknown_persons[i + j]
+                        with cols[j]:
+                            with st.container(border=True):
+                                basename = os.path.basename(person_dir)
+                                parts = basename.split('_')
+                                closest_name = parts[-1] if len(parts) > 2 else "None"
+                                
+                                person_crops = sorted([os.path.join(person_dir, f) for f in os.listdir(person_dir) if f.endswith(('.jpg', '.png'))])
+                                main_crop = person_crops[0] if person_crops else None
+                                if not main_crop:
+                                    continue
+                                    
+                                ref_image_path = get_reference_image(closest_name, DATASET_DIR)
+                                
+                                st.write(f"**Unknown** (Nearest: {closest_name})")
+                                c1, c2 = st.columns(2)
+                                c1.image(ImageOps.exif_transpose(Image.open(main_crop)).resize((200, 200)), caption="Image from Classroom", width='stretch')
+                                if ref_image_path:
+                                    c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='stretch')
+                                else:
+                                    c2.info("No reference found")
+                                    
+                                if len(person_crops) > 1:
+                                    with st.expander(f"View all {len(person_crops)} clustered images"):
+                                        display_images = [ImageOps.exif_transpose(Image.open(c)).resize((100, 100)) for c in person_crops]
+                                        st.image(display_images, width=80)
+                                    
+                                all_students = res['df_final']['Student Name'].tolist()
+                                default_idx = all_students.index(closest_name) if closest_name in all_students else 0
+                                
+                                action_c1, action_c2 = st.columns(2)
+                                with action_c1:
+                                    selected_student = st.selectbox("Select Student", all_students, index=default_idx, key=f"select_{person_dir}", label_visibility="collapsed")
+                                with action_c2:
+                                    if st.button("Mark", width='stretch', key=f"mark_{person_dir}"):
+                                        mark_present_callback(person_dir, selected_student)
+                                        st.rerun()
 
