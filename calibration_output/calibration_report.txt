@@ -1,0 +1,94 @@
+======================================================================
+  THRESHOLD CALIBRATION REPORT
+  Model:       InsightFace buffalo_l
+  Metric:      Cosine distance
+  Test images: 12
+  Faces found: 332
+  Enrolled:    58
+  GT Present:  45   GT Absent: 13
+======================================================================
+
+── Distance Statistics ──
+  Genuine  (same person):      min=0.1708  max=0.9382  mean=0.4240  median=0.3327  std=0.2240
+  Impostor (different person): min=0.6365  max=0.8878  mean=0.7484  median=0.7449  std=0.0715
+
+── Key Thresholds ──
+  Current threshold:       0.400
+  EER threshold:           0.6805  (EER = 0.2149)
+  Youden-optimal:          0.6360  (FAR=0.0000, FRR=0.2376)
+  Target FAR ≤ 1.00%:    0.6360  (actual FAR=0.0000, FRR=0.2376)
+
+  ★ RECOMMENDED THRESHOLD: 0.6360
+
+── Attendance Simulation ──
+   Threshold    TP    FP    FN    TN  Precision   Recall       F1  Accuracy
+  --------------------------------------------------------------------
+      0.3000    33     0    12    13     1.0000   0.7333   0.8462    0.7931
+      0.3500    41     0     4    13     1.0000   0.9111   0.9535    0.9310
+      0.4000    45     0     0    13     1.0000   1.0000   1.0000    1.0000
+      0.4500    45     0     0    13     1.0000   1.0000   1.0000    1.0000
+      0.5000    45     0     0    13     1.0000   1.0000   1.0000    1.0000
+      0.6360    45     0     0    13     1.0000   1.0000   1.0000    1.0000 ◀
+      0.6805    45     5     0     8     0.9000   1.0000   0.9474    0.9138
+
+── Per-Student Distances (sorted) ──
+                              Student   MinDist        GT  @Recommended
+  --------------------------------------------------------------------
+                         Shreya Nigam    0.1708   PRESENT   Accept  ✓
+                      Manit Jhajharia    0.1733   PRESENT   Accept  ✓
+                           Amresh Jha    0.1749   PRESENT   Accept  ✓
+                       Tarshit Sehgal    0.1807   PRESENT   Accept  ✓
+                       Devtanu Barman    0.1824   PRESENT   Accept  ✓
+                  Pratham Manish Shah    0.1866   PRESENT   Accept  ✓
+                    Abhishek Abhishek    0.1910   PRESENT   Accept  ✓
+              Jadhav Shubham Sudhakar    0.1945   PRESENT   Accept  ✓
+              Baral Prathmesh Santosh    0.1971   PRESENT   Accept  ✓
+                      Ganesh Yadawate    0.2078   PRESENT   Accept  ✓
+                        Santosh Singh    0.2097   PRESENT   Accept  ✓
+                      Anish Mayanache    0.2124   PRESENT   Accept  ✓
+                   Gurbani Jeet Sunil    0.2155   PRESENT   Accept  ✓
+                     Sameer Anand Jha    0.2171   PRESENT   Accept  ✓
+                  Jadhav Jay Karbhari    0.2270   PRESENT   Accept  ✓
+                       Suraj Adhikari    0.2336   PRESENT   Accept  ✓
+                       Shrutija Swain    0.2357   PRESENT   Accept  ✓
+                          Manas Patil    0.2414   PRESENT   Accept  ✓
+                 Shreeram Anil Jadhav    0.2431   PRESENT   Accept  ✓
+                    Rajeswar Banerjee    0.2444   PRESENT   Accept  ✓
+                   Ayush Ashish Kumar    0.2565   PRESENT   Accept  ✓
+                        Samyak Parakh    0.2636   PRESENT   Accept  ✓
+                         Chhavi Yadav    0.2685   PRESENT   Accept  ✓
+                        Pulkit Pulkit    0.2715   PRESENT   Accept  ✓
+                          Soumya Gour    0.2720   PRESENT   Accept  ✓
+                          Ayush Singh    0.2797   PRESENT   Accept  ✓
+                    Shaik Rehna Afroz    0.2813   PRESENT   Accept  ✓
+                 Atharva Uday Jaltare    0.2863   PRESENT   Accept  ✓
+                        Manaswi Goyal    0.2884   PRESENT   Accept  ✓
+                            Ankit Raj    0.2964   PRESENT   Accept  ✓
+                     Rishabh Bhardwaj    0.2980   PRESENT   Accept  ✓
+                          Jyoti Jyoti    0.2990   PRESENT   Accept  ✓
+                        Saurabh Gupta    0.2994   PRESENT   Accept  ✓
+                   Mihir Gajanan Wani    0.3161   PRESENT   Accept  ✓
+                     Maitreya Shelare    0.3176   PRESENT   Accept  ✓
+                 Nistala Sreechandana    0.3308   PRESENT   Accept  ✓
+                        Shaurya Goyal    0.3311   PRESENT   Accept  ✓
+                        Rownak Tiwari    0.3322   PRESENT   Accept  ✓
+              Yashasvee Vijay Taiwade    0.3362   PRESENT   Accept  ✓
+                          Devesh Soni    0.3390   PRESENT   Accept  ✓
+                    Lohitaksh Mahajan    0.3491   PRESENT   Accept  ✓
+                           Pyla Ramya    0.3598   PRESENT   Accept  ✓
+                     Moon Aman Milind    0.3724   PRESENT   Accept  ✓
+                     K. P. Lakshmeesh    0.3872   PRESENT   Accept  ✓
+                 Vishwam Hemang Patel    0.3965   PRESENT   Accept  ✓
+               Ajinkya Prashant Pawar    0.6365    ABSENT   Reject  ✓
+              Gogineni Venkat Sumanth    0.6366    ABSENT   Reject  ✓
+              Aboli Ganesh Malshikare    0.6444    ABSENT   Reject  ✓
+                         Deepak Kumar    0.6512    ABSENT   Reject  ✓
+                        Akarsh Saxena    0.6727    ABSENT   Reject  ✓
+                     Vedagya Bhalotia    0.6990    ABSENT   Reject  ✓
+                      Srushti Rajwade    0.7175    ABSENT   Reject  ✓
+                          Arjun Singh    0.7331    ABSENT   Reject  ✓
+                       Krunal Vaghela    0.7344    ABSENT   Reject  ✓
+                         Divig Bansal    0.7490    ABSENT   Reject  ✓
+                         Aman Russell    0.7572    ABSENT   Reject  ✓
+                  Nithin Jonnalagadda    0.7778    ABSENT   Reject  ✓
+                      Kamalesh Barman    0.7890    ABSENT   Reject  ✓
