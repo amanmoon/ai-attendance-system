@@ -5,6 +5,7 @@ from PIL import Image, ImageOps
 import shutil
 from mark_attendance import mark_attendance
 import time
+from supabase import create_client, Client
 
 def mark_present_callback(crop_path, selected_student):
     if not os.path.exists(crop_path):
@@ -59,6 +60,9 @@ def get_reference_image(student_name, dataset_dir):
             return os.path.join(student_path, sorted(images)[0])
     return None
 
+SUPABASE_URL = 'https://jjmqimjinuykhusquyxd.supabase.co'
+SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqbXFpbWppbnV5a2h1c3F1eXhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxODE4ODgsImV4cCI6MjA4OTc1Nzg4OH0.xiv1q7xuOM6hSM2KCsfQP2mjU9iyvabMp2DhRVhuVT8'
+Client = create_client(SUPABASE_URL, SUPABASE_KEY) 
 st.set_page_config(page_title="Automated Attendance System", layout="wide")
 
 st.title("Automated Classroom Attendance System")
@@ -78,6 +82,27 @@ if 'processing' not in st.session_state:
     st.session_state.processing = False
 if 'results' not in st.session_state:
     st.session_state.results = None
+
+st.sidebar.subheader("Cloud Database Sync")
+if st.sidebar.button("Download Embeddings from Cloud"):
+    try:
+        res = Client.storage.from_("embeddings").download("embeddings_dl.pkl")
+        with open(EMBEDDINGS_FILE, 'wb') as f:
+            f.write(res)
+        st.sidebar.success("Successfully downloaded embeddings from cloud!")
+    except Exception as e:
+        st.sidebar.error(f"Failed to download: {e}")
+
+if st.sidebar.button("Upload Embeddings to Cloud"):
+    if os.path.exists(EMBEDDINGS_FILE):
+        try:
+            with open(EMBEDDINGS_FILE, 'rb') as f:
+                Client.storage.from_("embeddings").upload("embeddings_dl.pkl", f, {"upsert": "true"})
+            st.sidebar.success("Successfully updated cloud embeddings!")
+        except Exception as e:
+            st.sidebar.error(f"Failed to upload: {e}")
+    else:
+        st.sidebar.warning("No local embeddings found to upload.")
 
 if st.sidebar.button("Load Dataset & Generate Embeddings"):
     if not os.path.exists(DATASET_DIR):
