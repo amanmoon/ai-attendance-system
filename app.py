@@ -83,8 +83,17 @@ if 'processing' not in st.session_state:
 if 'results' not in st.session_state:
     st.session_state.results = None
 
+if st.sidebar.button("Load Dataset & Generate Embeddings"):
+    if not os.path.exists(DATASET_DIR):
+        st.sidebar.error(f"Dataset directory '{DATASET_DIR}' not found!")
+
+if os.path.exists(EMBEDDINGS_FILE):
+    st.sidebar.info("Embeddings file exists. System is ready to mark attendance.")
+else:
+    st.sidebar.warning("No embeddings found. Please generate embeddings first.")
+
 st.sidebar.subheader("Cloud Database Sync")
-if st.sidebar.button("Download Embeddings from Cloud"):
+if st.sidebar.button("Download Embeddings from Cloud", use_container_width=True):
     try:
         res = Client.storage.from_("embeddings").download("embeddings_dl.pkl")
         with open(EMBEDDINGS_FILE, 'wb') as f:
@@ -93,7 +102,7 @@ if st.sidebar.button("Download Embeddings from Cloud"):
     except Exception as e:
         st.sidebar.error(f"Failed to download: {e}")
 
-if st.sidebar.button("Upload Embeddings to Cloud"):
+if st.sidebar.button("Upload Embeddings to Cloud", use_container_width=True):
     if os.path.exists(EMBEDDINGS_FILE):
         try:
             with open(EMBEDDINGS_FILE, 'rb') as f:
@@ -103,15 +112,6 @@ if st.sidebar.button("Upload Embeddings to Cloud"):
             st.sidebar.error(f"Failed to upload: {e}")
     else:
         st.sidebar.warning("No local embeddings found to upload.")
-
-if st.sidebar.button("Load Dataset & Generate Embeddings"):
-    if not os.path.exists(DATASET_DIR):
-        st.sidebar.error(f"Dataset directory '{DATASET_DIR}' not found!")
-
-if os.path.exists(EMBEDDINGS_FILE):
-    st.sidebar.info("Embeddings file exists. System is ready to mark attendance.")
-else:
-    st.sidebar.warning("No embeddings found. Please generate embeddings first.")
 
 st.header("Evaluating Attendance")
 
