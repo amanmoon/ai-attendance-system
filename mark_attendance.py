@@ -9,7 +9,7 @@ from insightface.app import FaceAnalysis
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-THRESHOLD = 0.6
+THRESHOLD = 0.605
 MIN_FACE_PX = 10
 BBOX_PADDING = 0.30
 DETECT_MAX_LONG_EDGE = None

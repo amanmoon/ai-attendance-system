@@ -6,6 +6,51 @@ import shutil
 from mark_attendance import mark_attendance
 import time
 
+def mark_present_callback(crop_path, selected_student):
+    if not os.path.exists(crop_path):
+        return
+    res = st.session_state.results
+    new_name = f"{selected_student}.png"
+    target_path = os.path.join(res['identified_dir'], new_name)
+    if os.path.exists(target_path):
+        os.remove(target_path)
+    os.rename(crop_path, target_path)
+    
+    idx = res['df_final'].index[res['df_final']['Student Name'] == selected_student].tolist()
+    if idx:
+        if res['df_final'].at[idx[0], 'Status'] == 'Absent':
+            res['df_final'].at[idx[0], 'Status'] = 'Present'
+            res['n_present'] += 1
+            res['n_absent'] -= 1
+            
+    res['n_unknown'] -= 1
+    res['df_final']["_sort"] = res['df_final']["Status"].map({"Present": 0, "Absent": 1})
+    res['df_final'] = res['df_final'].sort_values(["_sort", "Student Name"]).drop(columns="_sort").reset_index(drop=True)
+    res['df_final'].to_csv(res['final_csv_path'], index=False)
+    st.session_state.results = res
+
+def unmark_present_callback(crop_path, student_name):
+    if not os.path.exists(crop_path):
+        return
+    res = st.session_state.results
+    ts = int(time.time() * 1000)
+    new_name = f"unknown_{ts}_{student_name}.png"
+    target_path = os.path.join(res['unknown_dir'], new_name)
+    os.rename(crop_path, target_path)
+    
+    idx = res['df_final'].index[res['df_final']['Student Name'] == student_name].tolist()
+    if idx:
+        if res['df_final'].at[idx[0], 'Status'] == 'Present':
+            res['df_final'].at[idx[0], 'Status'] = 'Absent'
+            res['n_present'] -= 1
+            res['n_absent'] += 1
+            
+    res['n_unknown'] += 1
+    res['df_final']["_sort"] = res['df_final']["Status"].map({"Present": 0, "Absent": 1})
+    res['df_final'] = res['df_final'].sort_values(["_sort", "Student Name"]).drop(columns="_sort").reset_index(drop=True)
+    res['df_final'].to_csv(res['final_csv_path'], index=False)
+    st.session_state.results = res
+
 def get_reference_image(student_name, dataset_dir):
     student_path = os.path.join(dataset_dir, student_name)
     if os.path.exists(student_path):
@@ -188,13 +233,21 @@ if st.session_state.results:
                     student_name = os.path.splitext(os.path.basename(crop_path))[0]
                     ref_image_path = get_reference_image(student_name, DATASET_DIR)
                     
-                    st.write(f"**{student_name}**")
+                    head_col1, head_col2 = st.columns(2, vertical_alignment="center")
+                    with head_col1:
+                        st.write(f"**{student_name}**")
+                    with head_col2:
+                        if st.button("Unmark", key=f"unmark_{crop_path}", width='stretch'):
+                            unmark_present_callback(crop_path, student_name)
+                            st.rerun()
+                            
                     c1, c2 = st.columns(2)
-                    c1.image(ImageOps.exif_transpose(Image.open(crop_path)).resize((200, 200)), caption="Image from Classroom", width='content')
+                    c1.image(ImageOps.exif_transpose(Image.open(crop_path)).resize((200, 200)), caption="Image from Classroom", width='stretch')
                     if ref_image_path:
-                        c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='content')
+                        c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='stretch')
                     else:
                         c2.info("No reference found")
+                        
                     st.divider()
 
     with tab4:
@@ -217,10 +270,22 @@ if st.session_state.results:
                     
                     st.write(f"**Unknown** (Nearest: {closest_name})")
                     c1, c2 = st.columns(2)
-                    c1.image(ImageOps.exif_transpose(Image.open(crop_path)).resize((200, 200)), caption="Image from Classroom", width='content')
+                    c1.image(ImageOps.exif_transpose(Image.open(crop_path)).resize((200, 200)), caption="Image from Classroom", width='stretch')
                     if ref_image_path:
-                        c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='content')
+                        c2.image(ImageOps.exif_transpose(Image.open(ref_image_path)).resize((200, 200)), caption="Original Submitted Image", width='stretch')
                     else:
                         c2.info("No reference found")
+                        
+                    all_students = res['df_final']['Student Name'].tolist()
+                    default_idx = all_students.index(closest_name) if closest_name in all_students else 0
+                    
+                    action_c1, action_c2 = st.columns(2)
+                    with action_c1:
+                        selected_student = st.selectbox("Select Student", all_students, index=default_idx, key=f"select_{crop_path}", label_visibility="collapsed")
+                    with action_c2:
+                        if st.button("Mark", width='stretch', key=f"mark_{crop_path}"):
+                            mark_present_callback(crop_path, selected_student)
+                            st.rerun()
+                        
                     st.divider()
 
