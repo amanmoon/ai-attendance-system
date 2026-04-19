@@ -5,7 +5,6 @@ from PIL import Image, ImageOps
 import shutil
 from mark_attendance import mark_attendance, cluster_faces
 import time
-from supabase import create_client, Client
 
 def mark_present_callback(person_dir, selected_student):
     if not os.path.exists(person_dir):
@@ -19,14 +18,13 @@ def mark_present_callback(person_dir, selected_student):
     
     idx = res['df_final'].index[res['df_final']['Student Name'] == selected_student].tolist()
     if idx:
-        if res['df_final'].at[idx[0], 'Status'] == 'Absent':
-            res['df_final'].at[idx[0], 'Status'] = 'Present'
+        if res['df_final'].at[idx[0], 'Status'] == 'A':
+            res['df_final'].at[idx[0], 'Status'] = 'P'
             res['n_present'] += 1
             res['n_absent'] -= 1
             
     res['n_unknown'] -= 1
-    res['df_final']["_sort"] = res['df_final']["Status"].map({"Present": 0, "Absent": 1})
-    res['df_final'] = res['df_final'].sort_values(["_sort", "Student Name"]).drop(columns="_sort").reset_index(drop=True)
+    res['df_final'] = res['df_final'].sort_values("Student Name").reset_index(drop=True)
     res['df_final'].to_csv(res['final_csv_path'], index=False)
     st.session_state.results = res
 
@@ -41,14 +39,13 @@ def unmark_present_callback(person_dir, student_name):
     
     idx = res['df_final'].index[res['df_final']['Student Name'] == student_name].tolist()
     if idx:
-        if res['df_final'].at[idx[0], 'Status'] == 'Present':
-            res['df_final'].at[idx[0], 'Status'] = 'Absent'
+        if res['df_final'].at[idx[0], 'Status'] == 'P':
+            res['df_final'].at[idx[0], 'Status'] = 'A'
             res['n_present'] -= 1
             res['n_absent'] += 1
             
     res['n_unknown'] += 1
-    res['df_final']["_sort"] = res['df_final']["Status"].map({"Present": 0, "Absent": 1})
-    res['df_final'] = res['df_final'].sort_values(["_sort", "Student Name"]).drop(columns="_sort").reset_index(drop=True)
+    res['df_final'] = res['df_final'].sort_values("Student Name").reset_index(drop=True)
     res['df_final'].to_csv(res['final_csv_path'], index=False)
     st.session_state.results = res
 
@@ -60,9 +57,6 @@ def get_reference_image(student_name, dataset_dir):
             return os.path.join(student_path, sorted(images)[0])
     return None
 
-SUPABASE_URL = 'https://jjmqimjinuykhusquyxd.supabase.co'
-SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqbXFpbWppbnV5a2h1c3F1eXhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxODE4ODgsImV4cCI6MjA4OTc1Nzg4OH0.xiv1q7xuOM6hSM2KCsfQP2mjU9iyvabMp2DhRVhuVT8'
-Client = create_client(SUPABASE_URL, SUPABASE_KEY) 
 st.set_page_config(page_title="Automated Attendance System", layout="wide")
 
 st.title("Automated Classroom Attendance System")
@@ -91,27 +85,6 @@ if os.path.exists(EMBEDDINGS_FILE):
     st.sidebar.info("Embeddings file exists. System is ready to mark attendance.")
 else:
     st.sidebar.warning("No embeddings found. Please generate embeddings first.")
-
-st.sidebar.subheader("Cloud Database Sync")
-if st.sidebar.button("Download Embeddings from Cloud", width='stretch'):
-    try:
-        res = Client.storage.from_("embeddings").download("embeddings_dl.pkl")
-        with open(EMBEDDINGS_FILE, 'wb') as f:
-            f.write(res)
-        st.sidebar.success("Successfully downloaded embeddings from cloud!")
-    except Exception as e:
-        st.sidebar.error(f"Failed to download: {e}")
-
-if st.sidebar.button("Upload Embeddings to Cloud", width='stretch'):
-    if os.path.exists(EMBEDDINGS_FILE):
-        try:
-            with open(EMBEDDINGS_FILE, 'rb') as f:
-                Client.storage.from_("embeddings").upload("embeddings_dl.pkl", f, {"upsert": "true"})
-            st.sidebar.success("Successfully updated cloud embeddings!")
-        except Exception as e:
-            st.sidebar.error(f"Failed to upload: {e}")
-    else:
-        st.sidebar.warning("No local embeddings found to upload.")
 
 st.header("Evaluating Attendance")
 
@@ -180,13 +153,12 @@ if uploaded_files:
             
             final_attendance = []
             for student in all_students:
-                status = "Present" if student in all_present_students else "Absent"
+                status = "P" if student in all_present_students else "A"
                 final_attendance.append({"Student Name": student, "Status": status})
             
             df_final = pd.DataFrame(final_attendance)
 
-            df_final["_sort"] = df_final["Status"].map({"Present": 0, "Absent": 1})
-            df_final = df_final.sort_values(["_sort", "Student Name"]).drop(columns="_sort").reset_index(drop=True)
+            df_final = df_final.sort_values("Student Name").reset_index(drop=True)
             final_csv_path = os.path.join(OUTPUT_DIR, "final_attendance.csv")
             df_final.to_csv(final_csv_path, index=False)
             
