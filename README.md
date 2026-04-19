@@ -4,7 +4,7 @@ An automated attendance tracking system powered by Deep Face Recognition and Str
 
 ## Features
 
-- **Face Registration & Embeddings**: Extracts facial features from student images using **DeepFace** (Facenet512 model + RetinaFace detector backend) and stores them as `.pkl` embeddings.
+- **Face Registration & Embeddings**: Extracts facial features from student images using **InsightFace** (`buffalo_l` model for detection and representation) and stores them as `.pkl` embeddings.
 - **Automated Attendance Marking**: Analyzes uploaded classroom images, extracts faces, and matches them against stored student embeddings using Cosine Distance.
 - **Interactive Web Interface**: A user-friendly **Streamlit** dashboard for:
   - Generating and loading student datasets.
@@ -33,6 +33,13 @@ An automated attendance tracking system powered by Deep Face Recognition and Str
    ```bash
    pip install -r requirements.txt
    ```
+
+## Algorithm Flow & Key Features
+
+1. **Tiled Face Detection**: Splits large classroom images into overlapping tiles to improve detection of small or occluded faces (`buffalo_l`).
+2. **Non-Maximum Suppression (NMS)**: Filters out duplicate bounding boxes generated at tile boundaries.
+3. **Face Clustering**: Groups faces based on embedding distances. **Why it's useful**: Helps remove unwanted matching anomalies by combining multiple angles of the same person into one robust identity, reducing false positives.
+4. **Face Matching & Classification**: Compares clustered embeddings against the known dataset. Strict calibration thresholds ensure unverified faces are marked as "Unknown".
 
 ## Dataset Structure
 
